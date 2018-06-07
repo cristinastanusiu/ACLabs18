@@ -1,0 +1,222 @@
+#include <boarddefs.h>
+#include <IRremote.h>
+#include <IRremoteInt.h>
+#include <ir_Lego_PF_BitStreamEncoder.h>
+#include <MovingAverageFilter.h>
+
+#include "Types.h"
+#include "Motors.h"
+#include "Ultrasonic.h"
+
+IRrecv irrecv(2);
+IRsend irsend;
+decode_results results;
+MovingAverageFilter SENSOR_FORWARD(50);
+MovingAverageFilter SENSOR_LEFT(50);
+MovingAverageFilter SENSOR_RIGHT(50);
+NewPing sonar1(trig_1, echo_1, Max_Dist); 
+NewPing sonar2(trig_2, echo_2, Max_Dist); 
+NewPing sonar3(trig_3, echo_3, Max_Dist);
+
+uint16 value;
+uint8 state=1;
+uint8 forward_filter;
+uint8 left_filter;
+uint8 right_filter;
+uint32 start_time;
+uint8 GREEN=39;
+uint8 RED=43;
+uint8 BLUE=41;
+uint8 counter2;
+uint32 counterX = 0;
+
+uint32 previous_forward;
+uint32 previous_right;
+uint32 previous_left;
+
+uint32 speed_val;
+
+void algorithm();
+void dance()
+{
+      analogWrite (MOTOR_Left_1, 150);
+      analogWrite (MOTOR_Right_1, 0);
+      analogWrite (MOTOR_Left_2, 150);
+      analogWrite (MOTOR_Right_2, 0);
+  
+}
+
+void setup() {
+
+   irrecv.enableIRIn(); // Start the receiver
+    
+    pingTimer1 = millis() + pingSpeed; // Sensor 1 fires after 1 second (pingSpeed)
+    pingTimer2 = pingTimer1 + delay_ping; // Sensor 2 fires 35ms later
+    pingTimer3 = pingTimer2 + delay_ping;
+    
+Serial.begin(9600);
+    pinMode(MOTOR_Left_1, OUTPUT);
+    pinMode(MOTOR_Left_2, OUTPUT);
+    pinMode(MOTOR_Right_1, OUTPUT);
+    pinMode(MOTOR_Right_2, OUTPUT);
+}
+
+void go(uint8 val1, uint8 val2, uint8 dir)
+{
+  if(dir)
+ { analogWrite (MOTOR_Left_1, val1);
+  analogWrite (MOTOR_Right_1, 0);
+  analogWrite (MOTOR_Left_2, 0);
+  analogWrite (MOTOR_Right_2, val2);}
+  else
+   { analogWrite (MOTOR_Left_1, 0);
+  analogWrite (MOTOR_Right_1, val1);
+  analogWrite (MOTOR_Left_2, val2);
+  analogWrite (MOTOR_Right_2, 0);}
+}
+
+void loop() {
+  Serial.println(state);
+speed_val=100-10*(left_filter-7);  // 8 can be 7,9, 10 can be 8 9 11 12
+
+//Serial.println(sonar1.ping_cm()); /* stanga */
+//Serial.print("   "); 
+//Serial.println(sonar2.ping_cm()); /* dreapta */
+// Serial.print("   "); 
+// Serial.println(sonar3.ping_cm()); /* inainte */
+
+counterX += 1;
+
+if(4294967295 == results.value)
+{
+  go(0,0,0);
+  digitalWrite(BLUE,HIGH);
+  dance();
+  }
+else{
+      algorithm();
+
+      if((counterX % 5) == 0){
+      digitalWrite(GREEN,HIGH);
+      }
+      else{
+      digitalWrite(GREEN,LOW);
+      }
+  
+  }
+  
+
+if ((irrecv.decode(&results)))
+   {
+     irrecv.resume();  /* infra-rosu */
+     value= results.value;
+     //Serial.println(value); 
+   }
+
+forward_filter=SENSOR_FORWARD.process(sonar3.ping_cm());
+left_filter=SENSOR_LEFT.process(sonar1.ping_cm());
+right_filter=SENSOR_RIGHT.process(sonar2.ping_cm());
+
+previous_forward=forward_filter;
+if(forward_filter==0)
+forward_filter=previous_forward; 
+
+previous_left=left_filter;
+if(left_filter==0)
+left_filter=previous_left; 
+
+previous_right=right_filter;
+if(right_filter==0)
+right_filter=previous_right; 
+
+////filter(sonar3.ping_cm(),100);
+////go(100, 100, 1);
+//digitalWrite(GREEN,HIGH);
+//delay(4000);
+//digitalWrite(GREEN,LOW);
+//delay(4000);
+//digitalWrite(BLUE,HIGH);
+//delay(4000);
+//digitalWrite(BLUE,LOW);
+//delay(440);
+//digitalWrite(RED,HIGH);
+
+}
+
+void algorithm(){
+
+  
+   switch(state)
+  {
+    case 0: // robotul este blocat intre 3 pereti 
+    go(0,0,0);
+    digitalWrite(GREEN,HIGH);
+  counter2=counter2+3;
+
+     if(counter2<22){ // 22 merge 
+
+      analogWrite (MOTOR_Left_1, 150);
+      analogWrite (MOTOR_Right_1, 0);
+      analogWrite (MOTOR_Left_2, 150);
+      analogWrite (MOTOR_Right_2, 0);
+      
+      } 
+  else{ 
+    state =1 ;
+    }
+    break;
+    
+   
+  
+    case 1: // robotul merge inainte 
+    
+          go(speed_val,100,1);
+          counter2=0;
+      
+      if(left_filter>12 )  //-->curba stanga
+      {
+         start_time=millis();
+          state=3;
+      }
+      else
+      if(forward_filter<25)
+     { 
+            if(right_filter>15) // -->curba dreapta
+        {
+        
+           state=2;
+        }
+        
+           else
+           state = 0;// --> robotul este blocat intre 3 pereti 
+           
+       } 
+     
+       
+       break;
+  
+     
+     case 2: /* curba la dreapta */  
+    
+      if(right_filter>15)
+       { 
+       
+        go(100,30, 1); //100-roata din stanga, 30-dreapta
+       }
+     else{
+       state=1;
+     }
+          break;
+      case 3: /* curba la stanga */
+       if((millis()-start_time)<550)  
+       {
+         go(30,100, 1);
+       }
+     else{
+       state=1;
+      }
+           break;
+     
+        
+    } 
+  }
